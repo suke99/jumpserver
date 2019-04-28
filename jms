@@ -10,14 +10,30 @@ import sys
 import signal
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
-
-from apps import __version__
+sys.path.insert(0, BASE_DIR)
 
 try:
-    from config import config as CONFIG
-except ImportError:
-    print("Could not find config file, `cp config_example.py config.py`")
+    from apps.jumpserver import const
+    __version__ = const.VERSION
+except ImportError as e:
+    print("Not found __version__: {}".format(e))
+    print("Sys path: {}".format(sys.path))
+    print("Python is: ")
+    print(subprocess.call('which python', shell=True))
+    __version__ = 'Unknown'
+    try:
+        import apps
+        print("List apps: {}".format(os.listdir('apps')))
+        print('apps is: {}'.format(apps))
+    except:
+        pass
+
+try:
+    from apps.jumpserver.conf import load_user_config
+    CONFIG = load_user_config()
+except ImportError as e:
+    print("Import error: {}".format(e))
+    print("Could not find config file, `cp config_example.yml config.yml`")
     sys.exit(1)
 
 os.environ["PYTHONIOENCODING"] = "UTF-8"
@@ -26,10 +42,10 @@ LOG_DIR = os.path.join(BASE_DIR, 'logs')
 TMP_DIR = os.path.join(BASE_DIR, 'tmp')
 HTTP_HOST = CONFIG.HTTP_BIND_HOST or '127.0.0.1'
 HTTP_PORT = CONFIG.HTTP_LISTEN_PORT or 8080
-DEBUG = CONFIG.DEBUG
-LOG_LEVEL = CONFIG.LOG_LEVEL
+DEBUG = CONFIG.DEBUG or False
+LOG_LEVEL = CONFIG.LOG_LEVEL or 'INFO'
 
-START_TIMEOUT = 15
+START_TIMEOUT = 40
 WORKERS = 4
 DAEMON = False
 
@@ -42,10 +58,23 @@ try:
 except:
     pass
 
+def check_database_connection():
+    os.chdir(os.path.join(BASE_DIR, 'apps'))
+    for i in range(60):
+        print("Check database connection ...")
+        code = subprocess.call("python manage.py showmigrations users ", shell=True)
+        if code == 0:
+            print("Database connect success")
+            return
+        time.sleep(1)
+    print("Connection database failed, exist")
+    sys.exit(10)
+
 
 def make_migrations():
     print("Check database structure change ...")
     os.chdir(os.path.join(BASE_DIR, 'apps'))
+    print("Migrate model change to database ...")
     subprocess.call('python3 manage.py migrate', shell=True)
 
 
@@ -56,6 +85,7 @@ def collect_static():
 
 
 def prepare():
+    check_database_connection()
     make_migrations()
     collect_static()
 
@@ -93,8 +123,7 @@ def is_running(s, unlink=True):
     pid_file = get_pid_file_path(s)
 
     if os.path.isfile(pid_file):
-        with open(pid_file, 'r') as f:
-            pid = get_pid(s)
+        pid = get_pid(s)
         if check_pid(pid):
             return True
 
@@ -106,6 +135,8 @@ def is_running(s, unlink=True):
 def parse_service(s):
     if s == 'all':
         return all_services
+    elif "," in s:
+        return [i.strip() for i in s.split(',')]
     else:
         return [s]
 
@@ -122,15 +153,17 @@ def start_gunicorn():
     cmd = [
         'gunicorn', 'jumpserver.wsgi',
         '-b', bind,
+        #'-k', 'eventlet',
+        '-k', 'gthread',
+        '--threads', '10',
         '-w', str(WORKERS),
-        '-k', 'eventlet',
+        '--max-requests', '4096',
         '--access-logformat', log_format,
         '-p', pid_file,
     ]
 
     if DAEMON:
         cmd.extend([
-            '--access-logfile', log_file,
             '--daemon',
         ])
     else:
@@ -157,9 +190,9 @@ def start_celery():
     cmd = [
         'celery', 'worker',
         '-A',  'ops',
-        '-l', LOG_LEVEL.lower(),
+        '-l', 'INFO',
         '--pidfile', pid_file,
-        '-c', str(WORKERS),
+        '--autoscale', '20,4',
     ]
     if DAEMON:
         cmd.extend([
@@ -299,7 +332,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "service", type=str, default="all", nargs="?",
-        choices=("all", "gunicorn", "celery", "beat"),
+        choices=("all", "gunicorn", "celery", "beat", "celery,beat"),
         help="The service to start",
     )
     parser.add_argument('-d', '--daemon', nargs="?", const=1)

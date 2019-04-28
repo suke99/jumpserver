@@ -66,4 +66,5 @@ class ReplaceNodeAdminUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'nodes']
 
 
-
+class TaskIDSerializer(serializers.Serializer):
+    task = serializers.CharField(read_only=True)

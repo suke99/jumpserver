@@ -9,17 +9,22 @@ from django.db import models
 from django.utils.translation import ugettext_lazy as _
 from django.conf import settings
 
-from common.utils import get_signer, ssh_key_string_to_obj, ssh_key_gen
+from common.utils import (
+    get_signer, ssh_key_string_to_obj, ssh_key_gen, get_logger
+)
 from common.validators import alphanumeric
+from orgs.mixins import OrgModelMixin
 from .utils import private_key_validator
 
 signer = get_signer()
 
+logger = get_logger(__file__)
 
-class AssetUser(models.Model):
+
+class AssetUser(OrgModelMixin):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
-    name = models.CharField(max_length=128, unique=True, verbose_name=_('Name'))
-    username = models.CharField(max_length=32, verbose_name=_('Username'), validators=[alphanumeric])
+    name = models.CharField(max_length=128, verbose_name=_('Name'))
+    username = models.CharField(max_length=32, blank=True, verbose_name=_('Username'), validators=[alphanumeric])
     _password = models.CharField(max_length=256, blank=True, null=True, verbose_name=_('Password'))
     _private_key = models.TextField(max_length=4096, blank=True, null=True, verbose_name=_('SSH private key'), validators=[private_key_validator, ])
     _public_key = models.TextField(max_length=4096, blank=True, verbose_name=_('SSH public key'))
@@ -27,6 +32,13 @@ class AssetUser(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     created_by = models.CharField(max_length=128, null=True, verbose_name=_('Created by'))
+
+    UNREACHABLE, REACHABLE, UNKNOWN = range(0, 3)
+    CONNECTIVITY_CHOICES = (
+        (UNREACHABLE, _("Unreachable")),
+        (REACHABLE, _('Reachable')),
+        (UNKNOWN, _("Unknown")),
+    )
 
     @property
     def password(self):
@@ -37,8 +49,8 @@ class AssetUser(models.Model):
 
     @password.setter
     def password(self, password_raw):
-        raise AttributeError("Using set_auth do that")
-        # self._password = signer.sign(password_raw)
+        # raise AttributeError("Using set_auth do that")
+        self._password = signer.sign(password_raw)
 
     @property
     def private_key(self):
@@ -47,8 +59,8 @@ class AssetUser(models.Model):
 
     @private_key.setter
     def private_key(self, private_key_raw):
-        raise AttributeError("Using set_auth do that")
-        # self._private_key = signer.sign(private_key_raw)
+        # raise AttributeError("Using set_auth do that")
+        self._private_key = signer.sign(private_key_raw)
 
     @property
     def private_key_obj(self):
@@ -80,6 +92,11 @@ class AssetUser(models.Model):
         else:
             return None
 
+    @public_key.setter
+    def public_key(self, public_key_raw):
+        # raise AttributeError("Using set_auth do that")
+        self._public_key = signer.sign(public_key_raw)
+
     @property
     def public_key_obj(self):
         if self.public_key:
@@ -103,6 +120,28 @@ class AssetUser(models.Model):
 
         if update_fields:
             self.save(update_fields=update_fields)
+
+    def get_auth(self, asset=None):
+        pass
+
+    def load_specific_asset_auth(self, asset):
+        from ..backends.multi import AssetUserManager
+        try:
+            other = AssetUserManager.get(username=self.username, asset=asset)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+        else:
+            self._merge_auth(other)
+
+    def _merge_auth(self, other):
+        if not other:
+            return
+        if other.password:
+            self.password = other.password
+        if other.public_key:
+            self.public_key = other.public_key
+        if other.private_key:
+            self.private_key = other.private_key
 
     def clear_auth(self):
         self._password = ''

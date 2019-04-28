@@ -57,7 +57,6 @@
             </div>
         </div>
     </div>
-
 {% endblock %}
 {% block custom_foot_js %}
 <script>
@@ -65,6 +64,7 @@ var zTree;
 var inited = false;
 var url;
 var asset_table;
+var treeUrl = "{% url 'api-perms:user-nodes-assets-as-tree' pk=object.id %}?show_assets=0&cache_policy=1";
 
 function initTable() {
     if (inited){
@@ -72,6 +72,7 @@ function initTable() {
     } else {
         inited = true;
     }
+    url = "{% url 'api-perms:user-assets' pk=object.id %}?cache_policy=1";
     var options = {
         ele: $('#user_assets_table'),
         columnDefs: [
@@ -102,35 +103,17 @@ function initTable() {
             {data: "system_users_granted", orderable: false}
         ]
     };
-    return jumpserver.initDataTable(options);
+    asset_table = jumpserver.initServerSideDataTable(options)
 }
 
 function onSelected(event, treeNode) {
-    url = '{% url "api-perms:user-node-assets" pk=object.id node_id=DEFAULT_PK %}';
-    url = url.replace("{{ DEFAULT_PK }}", treeNode.id);
-    setCookie('node_selected', treeNode.id);
-    asset_table = initTable();
+    url = '{% url "api-perms:user-node-assets" pk=object.id node_id=DEFAULT_PK %}?cache_policy=1';
+    var node_id = treeNode.meta.node.id;
+    url = url.replace("{{ DEFAULT_PK }}", node_id);
     asset_table.ajax.url(url);
     asset_table.ajax.reload();
 }
 
-function selectQueryNode() {
-    var query_node_id = $.getUrlParam("node");
-    var cookie_node_id = getCookie('node_selected');
-    var node;
-    var node_id;
-
-    if (query_node_id !== null) {
-        node_id = query_node_id
-    } else if (cookie_node_id !== null) {
-        node_id = cookie_node_id;
-    }
-
-    node = zTree.getNodesByParam("id", node_id, null);
-    if (node){
-        zTree.selectNode(node[0]);
-    }
-}
 
 function initTree() {
     var setting = {
@@ -148,25 +131,19 @@ function initTree() {
         }
     };
 
-    var zNodes = [];
-    $.get("{% url 'api-perms:user-nodes' pk=object.id %}", function(data, status){
-        $.each(data, function (index, value) {
-            value["pId"] = value["parent"];
-            if (value["key"] === "0") {
-                value["open"] = true;
-            }
-            value["name"] = value["value"]
-        });
-        zNodes = data;
-        $.fn.zTree.init($("#assetTree"), setting, zNodes);
+    $.get(treeUrl, function(data, status) {
+        $.fn.zTree.init($("#assetTree"), setting, data);
         zTree = $.fn.zTree.getZTreeObj("assetTree");
-		rMenu = $("#rMenu");
-		selectQueryNode();
+        rootNodeAddDom(zTree, function () {
+            treeUrl = treeUrl.replace('cache_policy=1', 'cache_policy=2');
+            initTree();
+        });
     });
 }
 
 $(document).ready(function () {
     initTree();
+    initTable();
 });
 </script>
 {% endblock %}

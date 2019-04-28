@@ -19,6 +19,9 @@
                             <li class="active">
                                 <a href="{% url 'assets:asset-detail' pk=asset.id %}" class="text-center"><i class="fa fa-laptop"></i> {% trans 'Asset detail' %} </a>
                             </li>
+                            <li>
+                                <a href="{% url 'assets:asset-user-list' pk=asset.id %}" class="text-center"><i class="fa fa-bar-chart-o"></i> {% trans 'Asset user list' %} </a>
+                            </li>
                             {% if user.is_superuser %}
                             <li class="pull-right">
                                 <a class="btn btn-outline btn-default" href="{% url 'assets:asset-update' pk=asset.id %}"><i class="fa fa-edit"></i>{% trans 'Update' %}</a>
@@ -32,7 +35,7 @@
                         </ul>
                     </div>
                     <div class="tab-content">
-                        <div class="col-sm-7" style="padding-left: 0">
+                        <div class="col-sm-8" style="padding-left: 0">
                             <div class="ibox float-e-margins">
                                 <div class="ibox-title">
                                     <span class="label"><b>{{ asset.hostname }}</b></span>
@@ -70,8 +73,16 @@
                                             <td><b>{{ asset.port }}</b></td>
                                         </tr>
                                         <tr>
+                                            <td>{% trans 'Protocol' %}:</td>
+                                            <td><b>{{ asset.protocol }}</b></td>
+                                        </tr>
+                                        <tr>
                                             <td>{% trans 'Admin user' %}:</td>
                                             <td><b>{{ asset.admin_user }}</b></td>
+                                        </tr>
+                                        <tr>
+                                            <td>{% trans 'Domain' %}:</td>
+                                            <td><b>{{ asset.domain|default:"" }}</b></td>
                                         </tr>
                                         <tr>
                                             <td>{% trans 'Vendor' %}:</td>
@@ -130,8 +141,8 @@
                                 </div>
                             </div>
                         </div>
-                        {% if user.is_superuser %}
-                        <div class="col-sm-5" style="padding-left: 0;padding-right: 0">
+                        {% if user.is_superuser or user.is_org_admin %}
+                        <div class="col-sm-4" style="padding-left: 0;padding-right: 0">
                             <div class="panel panel-primary">
                                 <div class="panel-heading">
                                     <i class="fa fa-info-circle"></i> {% trans 'Quick modify' %}
@@ -155,7 +166,7 @@
                                               </span>
                                           </td>
                                         </tr>
-                                        {% if asset.is_unixlike %}
+                                        {% if asset.protocol == 'ssh' %}
                                         <tr>
                                             <td>{% trans 'Refresh hardware' %}:</td>
                                             <td>
